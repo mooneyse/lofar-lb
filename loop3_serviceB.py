@@ -3,7 +3,8 @@
 # Response to complaints that this looks too much like AIPS will involve adding 
 #    APARM arrays as arguments.
 
-import numpy as np,os,sys,glob,time,h5parm,scipy,pickle
+import numpy as np,os,sys,glob,time,scipy,pickle
+import losoto.h5parm as h5parm
 from scipy import interpolate
 import pyrap.tables as pt
 import matplotlib; from matplotlib import pyplot as plt
@@ -22,7 +23,7 @@ def loop3log (vis, pstr, cret = True):
 
 def h5read (htab, solset, soltab):
     fo = open('tmp_read.py','w')
-    fo.write ('import h5parm,os,pickle\n')
+    fo.write ('import losoto.h5parm as h5parm,os,pickle\n')
     fo.write ('tab = h5parm.openSoltab(\'%s\',solsetName=\'%s\',soltabName=\'%s\')\n' % \
                           (htab,solset,soltab)   )
     fo.write ('v, vm = tab.getValues()[0], tab.getValues()[1]\n')
@@ -69,6 +70,11 @@ def clcal (H1,H2,ant_interp=None):
         isamp = False
     ant_interp = a1 if ant_interp==None else ant_interp
     for i in range(len(a1)):
+        # SM: Crashed here for 3C 273 (but not for 3C 280). Traceback:
+        # File "/data020/scratch/sean/fafa/lofar-lb/loop3_serviceB.py", line 72, in clcal
+        # for i in range(len(a1)):
+        # ValueError: The truth value of an array with more than one element is ambiguous. Use a.any() or a.all()
+
         if a1[i] not in ant_interp:
             continue
         for iz in range(v1.shape[1]):
@@ -168,12 +174,20 @@ def snplt (vis,htab='1327_test.ms_cal.h5',solset='sol000',soltab='phase000',\
                 plt.subplot(nplot,1,1+iplot%nplot,xticks=[])
             if soltab[:5]=='phase':
                 plt.plot(time,np.rad2deg(v[:,0,aidx,ipol]),'+')
-                plt.ylim(-180.,180.);plt.xlim(time[0],time[-1])
+                try:
+                    plt.ylim(-180.,180.);plt.xlim(time[0],time[-1])
+                except:
+                    print 'Could not set one of the x axis limits. One of these is not real:', time[0], time[-1]
+                    print 'Hard-coding to plt.xlim(0, 600)'
+                    plt.ylim(-180.,180.);plt.xlim(0, 600)
                 plt.text(time[0],180.0-12.*nplot,a)
             else:
                 plt.plot(time,v[:,0,aidx,ipol],'+')
                 vmin,vmax = min(v[:,0,aidx,ipol]),max(v[:,0,aidx,ipol])
-                plt.ylim(vmin,vmax);plt.xlim(time[0],time[-1])
+                try:
+                    plt.ylim(vmin,vmax);plt.xlim(time[0],time[-1])
+                except:
+                    print 'Could not set one of the axes limits. One of these is not real:', vmin, vmax, time[0], time[-1]
                 plt.text(time[0],vmin+0.9*(vmax-vmin),a)
             plt.subplots_adjust(wspace=0,hspace=0)
         iplot+=1
@@ -182,23 +196,29 @@ def snplt (vis,htab='1327_test.ms_cal.h5',solset='sol000',soltab='phase000',\
             if os.path.isfile(thispng):
                 os.system('rm %s'%thispng)
             loop3log(vis,'-> %s'%thispng)
-            plt.savefig(thispng,bbox_inches='tight')
+            try:
+                plt.savefig(thispng) # ,bbox_inches='tight')
+            except:
+                print 'Failed to save', thispng
             plt.clf()
     if iplot%nplot:
         thispng = outpng+'_%d.png'%(iplot//nplot)
         if os.path.isfile(thispng):
             os.system('rm %s'%thispng)
         loop3log(vis,'-> %s'%thispng)
-        plt.savefig(thispng,bbox_inches='tight')
+        try:
+            plt.savefig(thispng) #,bbox_inches='tight')
+        except:
+            print 'Failed to save', thispng
 
 
 # Because I don't like writing enormous command lines in code. Also only have to change once if the
 # wsclean arguments change - or indeed if we use a different imager.
 def imagr (vis,threads=0,mem=100,doupdatemodel=True,tempdir='',dosaveweights=False,doprimary=False,\
-           robust=0,domfsweight=False,gausstaper=0.0,tukeytaper=0.0,dostoreweights=False,outname='wsclean',\
-           imsize=1024,cellsize='0.1asec',dopredict=False,niter=10000,pol='I',datacolumn='',autothreshold=0.,\
+           robust=-1,domfsweight=False,gausstaper=0.0,tukeytaper=0.0,dostoreweights=False,outname='wsclean',\
+           imsize=1024,cellsize='0.05asec',dopredict=False,niter=10000,pol='I',datacolumn='',autothreshold=3.,\
            dolocalrms=False,gain=0.1,mgain=1.0,domultiscale=False,dojoinchannels=False,channelsout=1,fitsmask='',\
-           baselineaveraging=0.0,maxuvwm=0.0,minuvwm=0.0,maxuvl=0.0,minuvl=0.0,dostopnegative=False,automask=0.,\
+           baselineaveraging=0.0,maxuvwm=0.0,minuvwm=100000.0,maxuvl=0.0,minuvl=0.0,dostopnegative=False,automask=0.,\
            dosavesourcelist=False,weightingrankfilter=0.0,weightingrankfiltersize=0.0):
     cmd = 'wsclean '
     cmd += ('' if not threads else '-j '+str(threads)+' ')
@@ -246,9 +266,10 @@ def imagr (vis,threads=0,mem=100,doupdatemodel=True,tempdir='',dosaveweights=Fal
     loop3log (vis,'Executing: '+cmd)
     os.system (cmd)
 
-# returns the maximum baseline length for imaging given
-# a list of coherences for stations
+
 def getcoh_baseline (antenna_list, coh, ccrit):
+    '''Returns the maximum baseline length for imaging given
+    a list of coherences for stations'''
     aname = ['DE601','DE602','DE603','DE604','DE605','DE609','SE','FR',\
              'UK','PL','IE']
     alen = [260,580,400,420,230,200,600,700,602,800,800]
@@ -273,7 +294,7 @@ def montage_plot(vis):
         npng = max(npng,int(i.split('_')[-1].split('.')[0])+1)
     cmd = 'montage -tile %dx%d -geometry 600x600 '%(npng+1,nloop)
     for i in range(nloop):
-        os.system('python aplpy_makeplot.py '+imgroot[i])
+        os.system('python /data020/scratch/sean/fafa/lofar-lb/aplpy_makeplot.py '+imgroot[i])  # otherwise it does not find the script
         thisv = imgroot[i].split('-MFS-image.fits')[0]
         for j in range(npng):
             this = '%s_c0.h5_%d.png'%(thisv,j)

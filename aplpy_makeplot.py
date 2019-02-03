@@ -14,9 +14,10 @@
 #   6) noshift - do not shift centre of plot from centre of image
 import numpy as np,matplotlib,scipy
 from matplotlib import pyplot as plt; from scipy import stats
+matplotlib.use('Agg')
 import astropy,aplpy,sys,os,argparse
 import astropy.io.fits as pyfits
-import fits_axzap
+#import fits_axzap
 sextractor = '/home/jackson/sextractor/usr/bin/sex'
 f=open('default.param','w')
 f.write('NUMBER\nX_IMAGE\nY_IMAGE\nFLUX_ISO\nFLUX_RADIUS\nFLUX_MAX\nISOAREA_IMAGE\n')
@@ -37,9 +38,41 @@ parser.add_argument ('-s', '--noshift',dest='noshift',help='do not shift centre'
 parser.add_argument ('-m', '--margin',type=float,help='margin allowance',default=1.7)
 args = parser.parse_args()
 
+
+def fits_axzapit (h, k):
+    try:
+        h.remove(k)
+        return False
+    except:
+        return True
+
+
+def fits_axzap (infile,outfile):
+    hdulist = pyfits.open(infile)
+    hdu = hdulist[0]
+    while hdu.data.ndim>2:
+        shrinkax = np.argwhere(hdu.data.shape==np.min(hdu.data.shape))[0][0]
+        hdu.data = np.take (hdu.data,0,axis=shrinkax)
+    i=2
+    while True:
+        i+=1
+        isit = fits_axzapit (hdu.header,'CRPIX%d'%i)
+        fits_axzapit (hdu.header,'CTYPE%d'%i)
+        fits_axzapit (hdu.header,'CUNIT%d'%i)
+        fits_axzapit (hdu.header,'CRVAL%d'%i)
+        fits_axzapit (hdu.header,'CDELT%d'%i)
+        fits_axzapit (hdu.header,'CRPIX%d'%i)
+        fits_axzapit (hdu.header,'CROTA%d'%i)
+        hdu.header.update()
+        if isit:
+            break
+    os.system ('rm '+outfile)
+    hdu.writeto (outfile)
+
+
 def make_cut_plot (infits, docut=2.0, outpng='', nolabel=False,  crms=3.0, noshift=False, margin=1.7):
     print 'Plotting ',infits
-    fits_axzap.fits_axzap (infits,'temp.fits')
+    fits_axzap (infits,'temp.fits')
     a = pyfits.getdata('temp.fits')
     h = pyfits.getheader('temp.fits')
     nx,ny = h['NAXIS1'],h['NAXIS2']

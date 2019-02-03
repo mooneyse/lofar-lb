@@ -1,12 +1,17 @@
 #!/usr/bin/env python
 
+#test
+
 import numpy as np,os,sys,glob,astropy,argparse,time
 import pyrap.tables as pt
 import astropy.io.fits as pyfits
 import loop3_serviceB as loop3_service
 CCRIT=1.6
-TSAMP=8.0    # time per sample. All times are in seconds. TSAMP is passed to NDPPP for writing
+TSAMP=4.0    # time per sample. All times are in seconds. TSAMP is passed to NDPPP for writing
              # the parset, since solints in NDPPP parsets are in samples.
+
+
+# Sean: This does not run in screen because matplotlib crashes as it can't connect to local host.
 
 
 def cleanup(vis):
@@ -21,16 +26,20 @@ def cleanup(vis):
     os.system('mv %s*.h5 %s_processing'%(vis,vis))
     calfiles = np.array([])
     if len(h5vis):
-        os.system('cp %s_processing/%s .'%(vis,h5vis[-1]))
+        h5vis_head, h5vis_tail = os.path.split(h5vis[-1])  # Sean added
+        os.system('cp %s_processing/%s .'%(vis,h5vis_tail))  # Sean edited
         calfiles = np.append(calfiles,h5vis[-1])
     if len(h5A):
-        os.system('cp %s_processing/%s .'%(vis,h5A[-1]))
+        h5A_head, h5A_tail = os.path.split(h5A[-1])  # Sean added
+        os.system('cp %s_processing/%s .'%(vis,h5A_tail))  # Sean edited
         calfiles = np.append(calfiles,h5A[-1])
-    os.system('cp %s_processing/%s_output.png .'%(vis,vis))
+    vis_head, vis_tail = os.path.split(vis)
+    os.system('cp %s_processing/%s_output.png .'%(vis,vis_tail))
+
     return '%s_output.png'%vis, calfiles
 
 def imaging(vis,niters,threshold):
-    loop3_service.imagr (vis,cellsize='0.1asec',imsize=4096,maxuvl=800000,\
+    loop3_service.imagr (vis,cellsize='0.05asec',imsize=1024,maxuvl=800000,\
           gain=0.1,mgain=0.85,dostopnegative=True,niter=niters,\
           autothreshold=threshold,weightingrankfiltersize=256,\
           weightingrankfilter=3,domultiscale=True,automask=7.0,\
@@ -44,7 +53,7 @@ def imaging(vis,niters,threshold):
 #  NOTE: uses bdsf - version 1.8.13 which loads by default has a conflict with
 #  other libraries - may need to unload and use 1.8.10 instead 
 
-def selfcal(vis,model='MODEL',outcal_root='',max_sol=3600.0,init_sol=32.0,\
+def selfcal(vis,model='MODEL',outcal_root='',max_sol=600.0,init_sol=30.0,\
             incol='DATA',outcol='DATA',caltype='P'):
     if not model:
         imaging(vis,1000,10)
@@ -147,7 +156,8 @@ def applycal_split (vis, visA, solset, parmdb, soltab='phase000',\
     fo.close()
     os.system ('NDPPP split.parset')
 
-def hybridloops (vis,strategy=['P32']*3+['A1800','A1200','A600'],startmod='',ith=5.0):
+def hybridloops (vis,strategy=['P30']*3+['A500','A450','A400'],startmod='',ith=5.0):
+    vis = vis.rstrip('/')  # remove trailing slash so the files are not created inside the MS
     import bdsf
     prevstat = 0.0
     cohlength = 2.0E6
@@ -163,8 +173,8 @@ def hybridloops (vis,strategy=['P32']*3+['A1800','A1200','A600'],startmod='',ith
         if startmod=='' or iloop:
             pstr = '******* PHASE LOOP %d running wsclean ************'%iloop
             loop3_service.loop3log (vis, pstr+'\n')
-            loop3_service.imagr(vis,cellsize='0.1asec',domultiscale=True,\
-                  outname=vis+'_%02d'%iloop,dojoinchannels=True,channelsout=8,robust=0,\
+            loop3_service.imagr(vis,cellsize='0.05asec',domultiscale=True,\
+                  outname=vis+'_%02d'%iloop,dojoinchannels=True,channelsout=8,robust=-1,\
                   fitsmask=fitsmask,dolocalrms=True,maxuvwm=cohlength)
         else:
             # Need something here to produce an image from startmod
@@ -186,8 +196,8 @@ def hybridloops (vis,strategy=['P32']*3+['A1800','A1200','A600'],startmod='',ith
             break
         else:   
             prevstat = thisstat
-            loop3_service.imagr(vis,dopredict=True,fitsmask=fitsmask,autothreshold=2.5,dolocalrms=True,\
-                                robust=0,outname=vis+'_%02d-MFS'%iloop)
+            loop3_service.imagr(vis,dopredict=True,fitsmask=fitsmask,autothreshold=3,dolocalrms=True,\
+                                robust=-1,outname=vis+'_%02d-MFS'%iloop)
         pstr='******* PHASE LOOP %d making new cal file %s ************' % (iloop,vis+'_%02d'%iloop)
         loop3_service.loop3log (vis, pstr+'\n')
         caltype, sol0 = strategy[iloop][0], float(strategy[iloop][1:])
@@ -216,8 +226,8 @@ def hybridloops (vis,strategy=['P32']*3+['A1800','A1200','A600'],startmod='',ith
         fitsmask = init_fitsmask if iloop==ploop else visA+'_%02d-mask.fits'%(iloop-1)
         pstr='******* AMPLITUDE LOOP %d running wsclean ************'%iloop
         loop3_service.loop3log (vis, pstr+'\n')
-        loop3_service.imagr(visA,cellsize='0.1asec',domultiscale=True,\
-                  outname=visA+'_%02d'%iloop,dojoinchannels=True,channelsout=8,robust=0,\
+        loop3_service.imagr(visA,cellsize='0.05asec',domultiscale=True,\
+                  outname=visA+'_%02d'%iloop,dojoinchannels=True,channelsout=8,robust=-1,\
                   fitsmask=fitsmask,dolocalrms=True,maxuvwm=cohlength)
         image_bdsf = '%s_%02d-MFS-image.fits'%(visA,iloop)
         pstr='******* AMPLITUDE LOOP %d making mask %s_%02d-MFS-image.fits ************'%(iloop,visA,iloop)
@@ -233,8 +243,8 @@ def hybridloops (vis,strategy=['P32']*3+['A1800','A1200','A600'],startmod='',ith
             break
         else:   
             prevstat = thisstat
-            loop3_service.imagr(visA,dopredict=True,fitsmask=fitsmask,autothreshold=2.5,dolocalrms=True,\
-                                robust=0,outname=visA+'_%02d-MFS'%iloop)
+            loop3_service.imagr(visA,dopredict=True,fitsmask=fitsmask,autothreshold=3,dolocalrms=True,\
+                                robust=-1,outname=visA+'_%02d-MFS'%iloop)
         pstr='******* AMPLITUDE LOOP %d making new cal file %s ************' % (iloop,visA+'_%02d'%iloop)
         loop3_service.loop3log (vis, pstr+'\n')
         caltype, sol0 = strategy[iloop][0], float(strategy[iloop][1:])
@@ -246,13 +256,23 @@ def hybridloops (vis,strategy=['P32']*3+['A1800','A1200','A600'],startmod='',ith
 
 
     fitsmask = init_fitsmask if iloop==ploop else visA+'_%02d-mask.fits'%(iloop-1)
-    loop3_service.imagr(visA,cellsize='0.1asec',domultiscale=True,\
-          outname=visA+'_final',dojoinchannels=True,channelsout=8,robust=0,\
+    loop3_service.imagr(visA,cellsize='0.05asec',domultiscale=True,\
+          outname=visA+'_final',dojoinchannels=True,channelsout=8,robust=-1,\
           fitsmask=fitsmask,dolocalrms=True)
-    
     
     loop3_service.montage_plot (vis)
     pngfile, h5files = cleanup (vis)
-    loop3_service.loop3log (vis,'Output png file %s'%pngfile)
+    # loop3_service.loop3log (vis,'Output png file %s'%pngfile)  # commented out as the log file is already moved so this creates a new one with just one line
     print 'Output calibration tables',h5files
     return pngfile,h5files
+
+#hybridloops(vis='/data020/scratch/sean/fafa/gaga/initsols_combined.ms/')
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-v', '--vis', required=True, type=str, help='measurement set')
+args = parser.parse_args()
+vis = args.vis
+
+hybridloops(vis=vis)
+
