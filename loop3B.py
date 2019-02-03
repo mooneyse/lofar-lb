@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-#test
-
 import numpy as np,os,sys,glob,astropy,argparse,time
 import pyrap.tables as pt
 import astropy.io.fits as pyfits
